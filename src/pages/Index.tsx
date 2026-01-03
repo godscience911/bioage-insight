@@ -56,17 +56,30 @@ const Index = () => {
 
     const surveyScore = calculateScore(surveyData);
     
-    // Combine survey score (60%) and face score (40%)
-    const combinedScore = Math.round(surveyScore * 0.6 + faceScore * 0.4);
+    // NEW: Face score weight increased to 70%, survey score 30%
+    const combinedScore = Math.round(surveyScore * 0.3 + faceScore * 0.7);
     
-    // Calculate biological age
-    // Higher score = younger biological age
-    // Score of 100 = 5 years younger, Score of 50 = actual age, Score of 0 = 5 years older
-    const ageAdjustment = Math.round((combinedScore - 50) / 10);
-    const biologicalAge = surveyData.actualAge - ageAdjustment;
+    // NEW: Realistic age adjustment algorithm
+    // Face score range: 20-100
+    // Score 100 = up to 10 years younger (best case)
+    // Score 50 = actual age
+    // Score 20 = up to 60 years older (worst case - elderly appearance)
+    let ageAdjustment: number;
+    
+    if (faceScore >= 50) {
+      // Good condition: can be up to 10 years younger
+      // Score 50 = 0 adjustment, Score 100 = -10 years
+      ageAdjustment = -Math.round(((faceScore - 50) / 50) * 10);
+    } else {
+      // Poor condition: can be up to 60 years older
+      // Score 50 = 0 adjustment, Score 20 = +60 years
+      ageAdjustment = Math.round(((50 - faceScore) / 30) * 60);
+    }
+    
+    const biologicalAge = surveyData.actualAge + ageAdjustment;
 
     setResult({
-      biologicalAge: Math.max(18, biologicalAge),
+      biologicalAge: Math.max(18, Math.min(120, biologicalAge)),
       actualAge: surveyData.actualAge,
       difference: surveyData.actualAge - biologicalAge,
       score: combinedScore,

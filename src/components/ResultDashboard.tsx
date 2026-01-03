@@ -1,3 +1,4 @@
+import React from 'react';
 import { motion } from 'framer-motion';
 import { Pill, Timer, Activity, Droplets, Sun, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -67,16 +68,17 @@ const priorityLabels = {
   low: { text: '낮음', color: 'text-accent' },
 };
 
-export const ResultDashboard = ({ result, onRestart }: ResultDashboardProps) => {
-  const { biologicalAge, actualAge, score } = result;
-  const difference = actualAge - biologicalAge;
-  const isYounger = difference > 0;
+export const ResultDashboard = React.forwardRef<HTMLDivElement, ResultDashboardProps>(
+  ({ result, onRestart }, ref) => {
+    const { biologicalAge, actualAge, score } = result;
+    const difference = actualAge - biologicalAge;
+    const isYounger = difference > 0;
 
-  // Select recommendations based on score
-  const recommendations = allRecommendations.slice(0, 3);
+    // Select recommendations based on score
+    const recommendations = allRecommendations.slice(0, 3);
 
-  return (
-    <div className="min-h-screen px-4 py-12">
+    return (
+      <div ref={ref} className="min-h-screen px-4 py-12">
       <div className="max-w-2xl mx-auto">
         {/* Header */}
         <motion.div
@@ -225,4 +227,6 @@ export const ResultDashboard = ({ result, onRestart }: ResultDashboardProps) => 
       </div>
     </div>
   );
-};
+});
+
+ResultDashboard.displayName = 'ResultDashboard';

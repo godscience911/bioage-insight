@@ -1,11 +1,13 @@
 import { motion } from 'framer-motion';
+import React from 'react';
 
 interface GaugeChartProps {
   biologicalAge: number;
   actualAge: number;
 }
 
-export const GaugeChart = ({ biologicalAge, actualAge }: GaugeChartProps) => {
+export const GaugeChart = React.forwardRef<HTMLDivElement, GaugeChartProps>(
+  ({ biologicalAge, actualAge }, ref) => {
   const difference = actualAge - biologicalAge;
   const isYounger = difference > 0;
   
@@ -128,4 +130,6 @@ export const GaugeChart = ({ biologicalAge, actualAge }: GaugeChartProps) => {
       </motion.div>
     </div>
   );
-};
+});
+
+GaugeChart.displayName = 'GaugeChart';
