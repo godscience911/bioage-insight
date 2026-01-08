@@ -1,15 +1,17 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Camera, Upload, Scan, CheckCircle, AlertCircle, Video, VideoOff } from 'lucide-react';
+import { Camera, Upload, Scan, CheckCircle, AlertCircle, Video, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { useFaceApi } from '@/hooks/useFaceApi';
 import React from 'react';
 
 interface FaceScanProps {
-  onComplete: (score: number) => void;
+  onComplete: (score: number, predictedAge: number) => void;
   onBack: () => void;
+  actualAge: number;
 }
 
-type ScanPhase = 'camera' | 'upload' | 'scanning' | 'complete';
+type ScanPhase = 'loading' | 'camera' | 'upload' | 'scanning' | 'complete';
 
 interface ScanMetric {
   label: string;
@@ -18,22 +20,25 @@ interface ScanMetric {
 }
 
 const scanningSteps = [
-  { label: '얼굴 특징점 감지 중...', duration: 600 },
-  { label: '주름 깊이 분석 중...', duration: 800 },
-  { label: '피부 수분도 체크 중...', duration: 700 },
-  { label: '탄력 지수 측정 중...', duration: 750 },
-  { label: '색소 침착 분석 중...', duration: 650 },
-  { label: '최종 바이오마커 계산 중...', duration: 500 },
+  { label: '얼굴 특징점 감지 중...', key: 'detection' },
+  { label: '주름 깊이 분석 중...', key: 'wrinkles' },
+  { label: '피부 수분도 체크 중...', key: 'hydration' },
+  { label: '탄력 지수 측정 중...', key: 'elasticity' },
+  { label: '색소 침착 분석 중...', key: 'pigmentation' },
+  { label: '최종 바이오마커 계산 중...', key: 'biomarker' },
 ];
 
 export const FaceScan = React.forwardRef<HTMLDivElement, FaceScanProps>(
-  ({ onComplete, onBack }, ref) => {
-    const [phase, setPhase] = useState<ScanPhase>('camera');
+  ({ onComplete, onBack, actualAge }, ref) => {
+    const { modelStatus, loadingProgress, error: modelError, analyzeFromUrl, analyzeFace, isReady } = useFaceApi();
+    
+    const [phase, setPhase] = useState<ScanPhase>('loading');
     const [currentScanStep, setCurrentScanStep] = useState(0);
     const [imagePreview, setImagePreview] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
     const [isCameraActive, setIsCameraActive] = useState(false);
     const [cameraPermissionDenied, setCameraPermissionDenied] = useState(false);
+    const [analysisResult, setAnalysisResult] = useState<{ faceScore: number; predictedAge: number } | null>(null);
     const [liveMetrics, setLiveMetrics] = useState<ScanMetric[]>([
       { label: '주름 깊이', value: 0, unit: 'μm' },
       { label: '수분도', value: 0, unit: '%' },
@@ -46,6 +51,19 @@ export const FaceScan = React.forwardRef<HTMLDivElement, FaceScanProps>(
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
     const metricsIntervalRef = useRef<NodeJS.Timeout | null>(null);
+    const analysisImageRef = useRef<HTMLImageElement | null>(null);
+
+    // Update phase when models are ready
+    useEffect(() => {
+      if (modelStatus === 'ready') {
+        setPhase('camera');
+      } else if (modelStatus === 'loading') {
+        setPhase('loading');
+      } else if (modelStatus === 'error') {
+        setError(modelError || 'AI 모델 로딩 실패');
+        setPhase('upload'); // Fallback to upload mode
+      }
+    }, [modelStatus, modelError]);
 
     // Cleanup stream on unmount
     useEffect(() => {
@@ -93,14 +111,14 @@ export const FaceScan = React.forwardRef<HTMLDivElement, FaceScanProps>(
       }
     }, []);
 
-    // Start camera when component mounts
+    // Start camera when phase is camera and models are ready
     useEffect(() => {
-      if (phase === 'camera' && !cameraPermissionDenied) {
+      if (phase === 'camera' && !cameraPermissionDenied && isReady) {
         startCamera();
       }
-    }, [phase, startCamera, cameraPermissionDenied]);
+    }, [phase, startCamera, cameraPermissionDenied, isReady]);
 
-    const captureFrame = useCallback(() => {
+    const captureFrame = useCallback((): string | null => {
       if (!videoRef.current || !canvasRef.current) return null;
       
       const canvas = canvasRef.current;
@@ -117,22 +135,8 @@ export const FaceScan = React.forwardRef<HTMLDivElement, FaceScanProps>(
       return null;
     }, []);
 
-    const startScan = useCallback(() => {
-      // Capture current frame if using camera
-      if (phase === 'camera' && isCameraActive) {
-        const frame = captureFrame();
-        if (frame) {
-          setImagePreview(frame);
-        }
-      }
-      
-      // Stop camera to save resources
-      stopCamera();
-      
-      setPhase('scanning');
-      setCurrentScanStep(0);
-
-      // Start live metrics animation
+    const runAnalysis = useCallback(async (imageUrl: string) => {
+      // Start live metrics animation during analysis
       metricsIntervalRef.current = setInterval(() => {
         setLiveMetrics(prev => prev.map(metric => ({
           ...metric,
@@ -140,30 +144,95 @@ export const FaceScan = React.forwardRef<HTMLDivElement, FaceScanProps>(
         })));
       }, 150);
 
-      // Progress through scanning steps
-      let stepIndex = 0;
-      const progressScan = () => {
-        if (stepIndex >= scanningSteps.length) {
-          if (metricsIntervalRef.current) {
-            clearInterval(metricsIntervalRef.current);
-          }
-          
-          setPhase('complete');
-          
-          // Generate face score (20-100 range for more dramatic results)
-          const faceScore = Math.floor(Math.random() * 80) + 20;
-          
-          setTimeout(() => onComplete(faceScore), 1500);
-          return;
-        }
-        
-        setCurrentScanStep(stepIndex);
-        stepIndex++;
-        setTimeout(progressScan, scanningSteps[stepIndex - 1]?.duration || 600);
-      };
+      // Step 0: Face detection
+      setCurrentScanStep(0);
+      await new Promise(resolve => setTimeout(resolve, 800));
+
+      // Actually run face detection and analysis
+      const result = await analyzeFromUrl(imageUrl, actualAge);
       
-      setTimeout(progressScan, 500);
-    }, [phase, isCameraActive, captureFrame, stopCamera, onComplete]);
+      // Step 1: Wrinkle analysis
+      setCurrentScanStep(1);
+      await new Promise(resolve => setTimeout(resolve, 700));
+      
+      // Step 2: Hydration check
+      setCurrentScanStep(2);
+      await new Promise(resolve => setTimeout(resolve, 600));
+      
+      // Step 3: Elasticity
+      setCurrentScanStep(3);
+      await new Promise(resolve => setTimeout(resolve, 650));
+      
+      // Step 4: Pigmentation
+      setCurrentScanStep(4);
+      await new Promise(resolve => setTimeout(resolve, 550));
+      
+      // Step 5: Final biomarker calculation
+      setCurrentScanStep(5);
+      await new Promise(resolve => setTimeout(resolve, 500));
+
+      // Cleanup metrics interval
+      if (metricsIntervalRef.current) {
+        clearInterval(metricsIntervalRef.current);
+      }
+
+      if (result) {
+        setAnalysisResult({
+          faceScore: result.faceScore,
+          predictedAge: result.predictedAge,
+        });
+        setPhase('complete');
+        
+        // Delay before completing to show the result
+        setTimeout(() => {
+          onComplete(result.faceScore, result.predictedAge);
+        }, 1500);
+      } else {
+        // Fallback if no face detected - use random score
+        const fallbackScore = Math.floor(Math.random() * 40) + 40; // 40-80 range
+        const fallbackAge = actualAge + Math.floor(Math.random() * 10) - 3;
+        
+        setAnalysisResult({
+          faceScore: fallbackScore,
+          predictedAge: fallbackAge,
+        });
+        setPhase('complete');
+        setError('얼굴을 정확히 인식하지 못했습니다. 추정 결과를 제공합니다.');
+        
+        setTimeout(() => {
+          onComplete(fallbackScore, fallbackAge);
+        }, 1500);
+      }
+    }, [analyzeFromUrl, actualAge, onComplete]);
+
+    const startScan = useCallback(async () => {
+      let imageUrl: string | null = null;
+
+      // Capture current frame if using camera
+      if (phase === 'camera' && isCameraActive) {
+        imageUrl = captureFrame();
+        if (imageUrl) {
+          setImagePreview(imageUrl);
+        }
+      } else if (imagePreview) {
+        imageUrl = imagePreview;
+      }
+
+      if (!imageUrl) {
+        setError('이미지를 캡처할 수 없습니다.');
+        return;
+      }
+
+      // Stop camera to save resources
+      stopCamera();
+      
+      setPhase('scanning');
+      setCurrentScanStep(0);
+      setError(null);
+
+      // Run the actual AI analysis
+      await runAnalysis(imageUrl);
+    }, [phase, isCameraActive, captureFrame, stopCamera, imagePreview, runAnalysis]);
 
     const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
       const file = event.target.files?.[0];
@@ -175,10 +244,16 @@ export const FaceScan = React.forwardRef<HTMLDivElement, FaceScanProps>(
 
         const reader = new FileReader();
         reader.onloadend = () => {
-          setImagePreview(reader.result as string);
+          const imageUrl = reader.result as string;
+          setImagePreview(imageUrl);
           setError(null);
-          setPhase('upload');
-          setTimeout(() => startScan(), 500);
+          // Auto-start scan after short delay
+          setTimeout(async () => {
+            stopCamera();
+            setPhase('scanning');
+            setCurrentScanStep(0);
+            await runAnalysis(imageUrl);
+          }, 500);
         };
         reader.readAsDataURL(file);
       }
@@ -199,11 +274,62 @@ export const FaceScan = React.forwardRef<HTMLDivElement, FaceScanProps>(
           >
             <h2 className="text-2xl md:text-3xl font-bold mb-2">AI 얼굴 분석</h2>
             <p className="text-muted-foreground">
-              {phase === 'camera' ? '카메라를 바라보고 스캔을 시작하세요' : '얼굴 사진으로 피부 상태를 분석합니다'}
+              {phase === 'loading' && 'AI 모델을 준비하고 있습니다...'}
+              {phase === 'camera' && '카메라를 바라보고 스캔을 시작하세요'}
+              {phase === 'upload' && '얼굴 사진으로 피부 상태를 분석합니다'}
+              {phase === 'scanning' && 'AI가 얼굴을 분석하고 있습니다'}
+              {phase === 'complete' && '분석이 완료되었습니다'}
             </p>
           </motion.div>
 
           <AnimatePresence mode="wait">
+            {/* Loading Models View */}
+            {phase === 'loading' && (
+              <motion.div
+                key="loading"
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.95 }}
+                className="glass-card rounded-2xl p-8"
+              >
+                <div className="aspect-square rounded-xl bg-muted/30 flex flex-col items-center justify-center mb-6">
+                  <motion.div
+                    animate={{ rotate: 360 }}
+                    transition={{ duration: 2, repeat: Infinity, ease: 'linear' }}
+                    className="mb-6"
+                  >
+                    <Loader2 className="w-16 h-16 text-primary" />
+                  </motion.div>
+                  
+                  <h3 className="text-lg font-semibold mb-2">AI 준비 중</h3>
+                  <p className="text-muted-foreground text-sm text-center mb-4">
+                    얼굴 분석을 위한 AI 모델을 불러오고 있습니다
+                  </p>
+                  
+                  {/* Progress bar */}
+                  <div className="w-48 h-2 bg-muted rounded-full overflow-hidden">
+                    <motion.div
+                      className="h-full bg-gradient-to-r from-primary to-accent"
+                      initial={{ width: 0 }}
+                      animate={{ width: `${loadingProgress}%` }}
+                      transition={{ duration: 0.3 }}
+                    />
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-2">
+                    {loadingProgress}% 완료
+                  </p>
+                </div>
+
+                <Button
+                  variant="ghost"
+                  onClick={onBack}
+                  className="w-full"
+                >
+                  이전으로 돌아가기
+                </Button>
+              </motion.div>
+            )}
+
             {/* Camera View */}
             {phase === 'camera' && (
               <motion.div
@@ -320,6 +446,12 @@ export const FaceScan = React.forwardRef<HTMLDivElement, FaceScanProps>(
                       <span className="text-xs font-medium">LIVE</span>
                     </div>
                   )}
+
+                  {/* AI Ready indicator */}
+                  <div className="absolute bottom-4 left-4 flex items-center gap-2 bg-background/80 backdrop-blur-sm px-3 py-1.5 rounded-full">
+                    <div className="w-2 h-2 rounded-full bg-accent" />
+                    <span className="text-xs font-medium">AI 준비됨</span>
+                  </div>
                 </div>
 
                 {error && (
@@ -411,6 +543,7 @@ export const FaceScan = React.forwardRef<HTMLDivElement, FaceScanProps>(
                       setError(null);
                       setPhase('camera');
                     }}
+                    disabled={!isReady}
                     className="py-6 rounded-xl flex flex-col gap-2 h-auto"
                   >
                     <Video className="w-6 h-6" />
@@ -600,6 +733,18 @@ export const FaceScan = React.forwardRef<HTMLDivElement, FaceScanProps>(
                 </motion.div>
 
                 <h3 className="text-xl font-bold mb-2">분석 완료!</h3>
+                
+                {analysisResult && (
+                  <div className="mb-4 p-4 bg-muted/30 rounded-lg">
+                    <p className="text-sm text-muted-foreground mb-2">AI 예측 나이</p>
+                    <p className="text-3xl font-bold text-primary">{analysisResult.predictedAge}세</p>
+                  </div>
+                )}
+
+                {error && (
+                  <p className="text-amber-600 text-sm mb-4">{error}</p>
+                )}
+
                 <p className="text-muted-foreground">
                   결과를 확인하는 중입니다...
                 </p>
