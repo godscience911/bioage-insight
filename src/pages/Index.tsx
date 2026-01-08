@@ -51,32 +51,18 @@ const Index = () => {
     setStep('faceScan');
   }, []);
 
-  const handleFaceScanComplete = useCallback((faceScore: number) => {
+  const handleFaceScanComplete = useCallback((faceScore: number, predictedAge: number) => {
     if (!surveyData) return;
 
     const surveyScore = calculateScore(surveyData);
     
-    // NEW: Face score weight increased to 70%, survey score 30%
+    // Face score weight: 70%, survey score: 30%
     const combinedScore = Math.round(surveyScore * 0.3 + faceScore * 0.7);
     
-    // NEW: Realistic age adjustment algorithm
-    // Face score range: 20-100
-    // Score 100 = up to 10 years younger (best case)
-    // Score 50 = actual age
-    // Score 20 = up to 60 years older (worst case - elderly appearance)
-    let ageAdjustment: number;
-    
-    if (faceScore >= 50) {
-      // Good condition: can be up to 10 years younger
-      // Score 50 = 0 adjustment, Score 100 = -10 years
-      ageAdjustment = -Math.round(((faceScore - 50) / 50) * 10);
-    } else {
-      // Poor condition: can be up to 60 years older
-      // Score 50 = 0 adjustment, Score 20 = +60 years
-      ageAdjustment = Math.round(((50 - faceScore) / 30) * 60);
-    }
-    
-    const biologicalAge = surveyData.actualAge + ageAdjustment;
+    // Use AI predicted age directly as the biological age
+    // Then apply minor adjustments based on survey score
+    const surveyAdjustment = (surveyScore - 50) / 50 * 3; // ±3 years based on lifestyle
+    const biologicalAge = Math.round(predictedAge - surveyAdjustment);
 
     setResult({
       biologicalAge: Math.max(18, Math.min(120, biologicalAge)),
@@ -137,7 +123,11 @@ const Index = () => {
             exit={{ opacity: 0, x: -100 }}
             transition={{ duration: 0.3 }}
           >
-            <FaceScan onComplete={handleFaceScanComplete} onBack={handleBackToSurvey} />
+            <FaceScan 
+              onComplete={handleFaceScanComplete} 
+              onBack={handleBackToSurvey}
+              actualAge={surveyData?.actualAge || 30}
+            />
           </motion.div>
         )}
 
