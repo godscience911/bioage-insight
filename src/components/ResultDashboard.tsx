@@ -1,8 +1,9 @@
 import React from 'react';
 import { motion } from 'framer-motion';
-import { Pill, Timer, Activity, Droplets, Sun, RefreshCw } from 'lucide-react';
+import { Pill, Timer, Activity, Droplets, Sun, RefreshCw, Share2, MessageCircle, Instagram, Facebook } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { GaugeChart } from './GaugeChart';
+import { toast } from '@/hooks/use-toast';
 import type { SurveyResult, Recommendation } from '@/types/survey';
 
 interface ResultDashboardProps {
@@ -76,6 +77,67 @@ export const ResultDashboard = React.forwardRef<HTMLDivElement, ResultDashboardP
 
     // Select recommendations based on score
     const recommendations = allRecommendations.slice(0, 3);
+
+    // Share text for SNS
+    const shareText = `🧬 AI 생체나이 측정 결과!\n\n실제 나이: ${actualAge}세\n생체 나이: ${biologicalAge}세\n${isYounger ? `무려 ${Math.abs(difference)}살이나 젊습니다! 🎉` : `관리가 필요해요! 💪`}\n\n건강 점수: ${score}/100\n\n나도 측정해보기 👇`;
+    const shareUrl = window.location.origin;
+
+    const handleKakaoShare = () => {
+      // Kakao SDK share (requires Kakao SDK initialization)
+      if (typeof window !== 'undefined' && (window as any).Kakao) {
+        const Kakao = (window as any).Kakao;
+        if (!Kakao.isInitialized()) {
+          toast({
+            title: "카카오톡 공유",
+            description: "카카오 SDK가 초기화되지 않았습니다. 링크를 복사해서 공유해주세요.",
+          });
+          navigator.clipboard.writeText(`${shareText}\n${shareUrl}`);
+          return;
+        }
+        Kakao.Share.sendDefault({
+          objectType: 'feed',
+          content: {
+            title: 'AI 생체나이 측정 결과',
+            description: `생체 나이: ${biologicalAge}세 | 건강 점수: ${score}점`,
+            imageUrl: `${shareUrl}/og-image.png`,
+            link: {
+              mobileWebUrl: shareUrl,
+              webUrl: shareUrl,
+            },
+          },
+          buttons: [
+            {
+              title: '나도 측정하기',
+              link: {
+                mobileWebUrl: shareUrl,
+                webUrl: shareUrl,
+              },
+            },
+          ],
+        });
+      } else {
+        // Fallback: copy to clipboard
+        navigator.clipboard.writeText(`${shareText}\n${shareUrl}`);
+        toast({
+          title: "링크가 복사되었습니다!",
+          description: "카카오톡에 붙여넣기 하여 공유하세요.",
+        });
+      }
+    };
+
+    const handleInstagramShare = () => {
+      // Instagram doesn't support direct web sharing, copy to clipboard
+      navigator.clipboard.writeText(`${shareText}\n${shareUrl}`);
+      toast({
+        title: "텍스트가 복사되었습니다!",
+        description: "인스타그램 스토리나 DM에 붙여넣기 하세요.",
+      });
+    };
+
+    const handleFacebookShare = () => {
+      const facebookUrl = `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(shareUrl)}&quote=${encodeURIComponent(shareText)}`;
+      window.open(facebookUrl, '_blank', 'width=600,height=400');
+    };
 
     return (
       <div ref={ref} className="min-h-screen px-4 py-12">
@@ -205,6 +267,42 @@ export const ResultDashboard = React.forwardRef<HTMLDivElement, ResultDashboardP
                 </motion.div>
               );
             })}
+          </div>
+        </motion.div>
+
+        {/* SNS Share Buttons */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.6 }}
+          className="glass-card rounded-2xl p-6 mb-6"
+        >
+          <div className="flex items-center gap-2 mb-4">
+            <Share2 className="w-5 h-5 text-primary" />
+            <h3 className="font-semibold">결과 공유하기</h3>
+          </div>
+          <div className="flex gap-3 justify-center">
+            <Button
+              onClick={handleKakaoShare}
+              className="flex-1 gap-2 bg-[#FEE500] hover:bg-[#FDD835] text-[#3C1E1E]"
+            >
+              <MessageCircle className="w-5 h-5" />
+              카카오톡
+            </Button>
+            <Button
+              onClick={handleInstagramShare}
+              className="flex-1 gap-2 bg-gradient-to-r from-[#833AB4] via-[#FD1D1D] to-[#F77737] hover:opacity-90 text-white"
+            >
+              <Instagram className="w-5 h-5" />
+              인스타그램
+            </Button>
+            <Button
+              onClick={handleFacebookShare}
+              className="flex-1 gap-2 bg-[#1877F2] hover:bg-[#166FE5] text-white"
+            >
+              <Facebook className="w-5 h-5" />
+              페이스북
+            </Button>
           </div>
         </motion.div>
 
