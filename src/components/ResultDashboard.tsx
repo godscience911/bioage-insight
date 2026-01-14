@@ -1,6 +1,6 @@
 import React from 'react';
 import { motion } from 'framer-motion';
-import { Pill, Timer, Activity, Droplets, Sun, RefreshCw, Share2, MessageCircle, Instagram, Facebook } from 'lucide-react';
+import { Pill, Timer, Activity, Droplets, Sun, RefreshCw, Share2, MessageCircle, Instagram, Facebook, Twitter } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { GaugeChart } from './GaugeChart';
 import { toast } from '@/hooks/use-toast';
@@ -69,6 +69,13 @@ const priorityLabels = {
   low: { text: '낮음', color: 'text-accent' },
 };
 
+// Threads icon component (not available in lucide-react)
+const ThreadsIcon = ({ className }: { className?: string }) => (
+  <svg className={className} viewBox="0 0 24 24" fill="currentColor">
+    <path d="M12.186 24h-.007c-3.581-.024-6.334-1.205-8.184-3.509C2.35 18.44 1.5 15.586 1.472 12.01v-.017c.03-3.579.879-6.43 2.525-8.482C5.845 1.205 8.6.024 12.18 0h.014c2.746.02 5.043.725 6.826 2.098 1.677 1.29 2.858 3.13 3.509 5.467l-2.04.569c-1.104-3.96-3.898-5.984-8.304-6.015-2.91.022-5.11.936-6.54 2.717C4.307 6.504 3.616 8.914 3.589 12c.027 3.086.718 5.496 2.057 7.164 1.43 1.783 3.631 2.698 6.54 2.717 2.623-.02 4.358-.631 5.8-2.045 1.647-1.613 1.618-3.593 1.09-4.798-.31-.71-.873-1.3-1.634-1.75-.192 1.352-.622 2.446-1.284 3.272-.886 1.102-2.14 1.704-3.73 1.79-1.202.065-2.361-.218-3.259-.801-1.063-.689-1.685-1.74-1.752-2.96-.065-1.182.408-2.256 1.332-3.023.88-.73 2.132-1.13 3.528-1.13l.45.007c.904.02 1.696.143 2.374.368.002-.572-.053-1.1-.165-1.576-.23-.982-.678-1.737-1.329-2.244-.715-.556-1.71-.862-2.878-.886l-.011-2.12c1.59.03 2.95.483 4.042 1.347.94.744 1.613 1.752 2.006 3.002.34 1.082.498 2.334.469 3.73.474.294.883.63 1.226 1.006.652.716 1.1 1.628 1.333 2.71.247 1.148.182 2.51-.477 3.788-.798 1.545-2.182 2.792-4.002 3.6-1.549.687-3.382 1.022-5.466 1v-.003zm.282-7.877c-.703 0-1.296.14-1.716.405-.474.3-.71.73-.686 1.244.024.476.229.876.595 1.158.442.34 1.09.519 1.87.519h.09c1.056-.057 1.86-.418 2.392-1.08.382-.476.627-1.09.733-1.838-.64-.254-1.426-.396-2.345-.407h-.173l-.76-.001z"/>
+  </svg>
+);
+
 export const ResultDashboard = React.forwardRef<HTMLDivElement, ResultDashboardProps>(
   ({ result, onRestart }, ref) => {
     const { biologicalAge, actualAge, score } = result;
@@ -82,61 +89,156 @@ export const ResultDashboard = React.forwardRef<HTMLDivElement, ResultDashboardP
     const shareText = `🧬 AI 생체나이 측정 결과!\n\n실제 나이: ${actualAge}세\n생체 나이: ${biologicalAge}세\n${isYounger ? `무려 ${Math.abs(difference)}살이나 젊습니다! 🎉` : `관리가 필요해요! 💪`}\n\n건강 점수: ${score}/100\n\n나도 측정해보기 👇`;
     const shareUrl = window.location.origin;
 
-    const handleKakaoShare = () => {
-      // Kakao SDK share (requires Kakao SDK initialization)
+    // Web Share API helper for mobile native sharing
+    const tryNativeShare = async (title: string, text: string, url: string): Promise<boolean> => {
+      if (navigator.share) {
+        try {
+          await navigator.share({ title, text, url });
+          return true;
+        } catch (err) {
+          // User cancelled or share failed
+          return false;
+        }
+      }
+      return false;
+    };
+
+    const handleKakaoShare = async () => {
+      // Try Kakao SDK first
       if (typeof window !== 'undefined' && (window as any).Kakao) {
         const Kakao = (window as any).Kakao;
-        if (!Kakao.isInitialized()) {
-          toast({
-            title: "카카오톡 공유",
-            description: "카카오 SDK가 초기화되지 않았습니다. 링크를 복사해서 공유해주세요.",
-          });
-          navigator.clipboard.writeText(`${shareText}\n${shareUrl}`);
-          return;
-        }
-        Kakao.Share.sendDefault({
-          objectType: 'feed',
-          content: {
-            title: 'AI 생체나이 측정 결과',
-            description: `생체 나이: ${biologicalAge}세 | 건강 점수: ${score}점`,
-            imageUrl: `${shareUrl}/og-image.png`,
-            link: {
-              mobileWebUrl: shareUrl,
-              webUrl: shareUrl,
-            },
-          },
-          buttons: [
-            {
-              title: '나도 측정하기',
+        if (Kakao.isInitialized()) {
+          Kakao.Share.sendDefault({
+            objectType: 'feed',
+            content: {
+              title: 'AI 생체나이 측정 결과',
+              description: `생체 나이: ${biologicalAge}세 | 건강 점수: ${score}점`,
+              imageUrl: `${shareUrl}/og-image.png`,
               link: {
                 mobileWebUrl: shareUrl,
                 webUrl: shareUrl,
               },
             },
-          ],
+            buttons: [
+              {
+                title: '나도 측정하기',
+                link: {
+                  mobileWebUrl: shareUrl,
+                  webUrl: shareUrl,
+                },
+              },
+            ],
+          });
+          return;
+        }
+      }
+
+      // Fallback: Try native share API on mobile
+      const shared = await tryNativeShare('AI 생체나이 측정 결과', shareText, shareUrl);
+      if (!shared) {
+        // Try kakao talk scheme on mobile
+        const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+        if (isMobile) {
+          const kakaoScheme = `kakaotalk://msg/text/${encodeURIComponent(shareText + '\n' + shareUrl)}`;
+          window.location.href = kakaoScheme;
+          setTimeout(() => {
+            toast({
+              title: "카카오톡으로 이동 중...",
+              description: "앱이 열리지 않으면 카카오톡을 설치해주세요.",
+            });
+          }, 1000);
+        } else {
+          navigator.clipboard.writeText(`${shareText}\n${shareUrl}`);
+          toast({
+            title: "링크가 복사되었습니다!",
+            description: "카카오톡에 붙여넣기 하여 공유하세요.",
+          });
+        }
+      }
+    };
+
+    const handleInstagramShare = async () => {
+      const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+      
+      if (isMobile) {
+        // Instagram doesn't have a direct share scheme, but we can open the app
+        // and use clipboard for sharing
+        navigator.clipboard.writeText(`${shareText}\n${shareUrl}`);
+        
+        // Try to open Instagram app
+        const instagramUrl = 'instagram://app';
+        window.location.href = instagramUrl;
+        
+        toast({
+          title: "텍스트가 복사되었습니다!",
+          description: "인스타그램에서 스토리나 DM에 붙여넣기 하세요.",
         });
       } else {
-        // Fallback: copy to clipboard
+        // Desktop: copy and redirect to Instagram web
         navigator.clipboard.writeText(`${shareText}\n${shareUrl}`);
+        window.open('https://www.instagram.com/', '_blank');
         toast({
-          title: "링크가 복사되었습니다!",
-          description: "카카오톡에 붙여넣기 하여 공유하세요.",
+          title: "텍스트가 복사되었습니다!",
+          description: "인스타그램에서 붙여넣기 하여 공유하세요.",
         });
       }
     };
 
-    const handleInstagramShare = () => {
-      // Instagram doesn't support direct web sharing, copy to clipboard
-      navigator.clipboard.writeText(`${shareText}\n${shareUrl}`);
-      toast({
-        title: "텍스트가 복사되었습니다!",
-        description: "인스타그램 스토리나 DM에 붙여넣기 하세요.",
-      });
+    const handleFacebookShare = () => {
+      const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+      const facebookUrl = `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(shareUrl)}&quote=${encodeURIComponent(shareText)}`;
+      
+      if (isMobile) {
+        // Try Facebook app scheme first
+        const fbAppUrl = `fb://share/?quote=${encodeURIComponent(shareText)}&href=${encodeURIComponent(shareUrl)}`;
+        window.location.href = fbAppUrl;
+        
+        // Fallback to web after a short delay
+        setTimeout(() => {
+          window.open(facebookUrl, '_blank');
+        }, 500);
+      } else {
+        window.open(facebookUrl, '_blank', 'width=600,height=400');
+      }
     };
 
-    const handleFacebookShare = () => {
-      const facebookUrl = `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(shareUrl)}&quote=${encodeURIComponent(shareText)}`;
-      window.open(facebookUrl, '_blank', 'width=600,height=400');
+    const handleTwitterShare = () => {
+      const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+      const tweetText = `🧬 AI 생체나이 측정 결과!\n실제 나이: ${actualAge}세\n생체 나이: ${biologicalAge}세\n${isYounger ? `${Math.abs(difference)}살 더 젊어요! 🎉` : `관리가 필요해요! 💪`}\n건강 점수: ${score}/100`;
+      const twitterWebUrl = `https://twitter.com/intent/tweet?text=${encodeURIComponent(tweetText)}&url=${encodeURIComponent(shareUrl)}`;
+      
+      if (isMobile) {
+        // Try X/Twitter app scheme
+        const twitterAppUrl = `twitter://post?message=${encodeURIComponent(tweetText + '\n' + shareUrl)}`;
+        window.location.href = twitterAppUrl;
+        
+        setTimeout(() => {
+          window.open(twitterWebUrl, '_blank');
+        }, 500);
+      } else {
+        window.open(twitterWebUrl, '_blank', 'width=600,height=400');
+      }
+    };
+
+    const handleThreadsShare = async () => {
+      const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+      const threadsText = `🧬 AI 생체나이 측정 결과!\n실제 나이: ${actualAge}세 | 생체 나이: ${biologicalAge}세\n${isYounger ? `${Math.abs(difference)}살 더 젊어요! 🎉` : `관리가 필요해요! 💪`}\n건강 점수: ${score}/100\n\n${shareUrl}`;
+      
+      if (isMobile) {
+        // Try Threads app scheme (uses Instagram's infrastructure)
+        const threadsUrl = `barcelona://create?text=${encodeURIComponent(threadsText)}`;
+        window.location.href = threadsUrl;
+        
+        setTimeout(() => {
+          // Fallback: try web intent
+          const threadsWebUrl = `https://www.threads.net/intent/post?text=${encodeURIComponent(threadsText)}`;
+          window.open(threadsWebUrl, '_blank');
+        }, 500);
+      } else {
+        // Desktop: Threads web intent
+        const threadsWebUrl = `https://www.threads.net/intent/post?text=${encodeURIComponent(threadsText)}`;
+        window.open(threadsWebUrl, '_blank', 'width=600,height=600');
+      }
     };
 
     return (
@@ -281,27 +383,41 @@ export const ResultDashboard = React.forwardRef<HTMLDivElement, ResultDashboardP
             <Share2 className="w-5 h-5 text-primary" />
             <h3 className="font-semibold">결과 공유하기</h3>
           </div>
-          <div className="flex gap-3 justify-center">
+          <div className="grid grid-cols-5 gap-2">
             <Button
               onClick={handleKakaoShare}
-              className="flex-1 gap-2 bg-[#FEE500] hover:bg-[#FDD835] text-[#3C1E1E]"
+              className="flex flex-col items-center gap-1 h-auto py-3 bg-[#FEE500] hover:bg-[#FDD835] text-[#3C1E1E]"
             >
               <MessageCircle className="w-5 h-5" />
-              카카오톡
+              <span className="text-xs">카카오톡</span>
             </Button>
             <Button
               onClick={handleInstagramShare}
-              className="flex-1 gap-2 bg-gradient-to-r from-[#833AB4] via-[#FD1D1D] to-[#F77737] hover:opacity-90 text-white"
+              className="flex flex-col items-center gap-1 h-auto py-3 bg-gradient-to-r from-[#833AB4] via-[#FD1D1D] to-[#F77737] hover:opacity-90 text-white"
             >
               <Instagram className="w-5 h-5" />
-              인스타그램
+              <span className="text-xs">인스타</span>
             </Button>
             <Button
               onClick={handleFacebookShare}
-              className="flex-1 gap-2 bg-[#1877F2] hover:bg-[#166FE5] text-white"
+              className="flex flex-col items-center gap-1 h-auto py-3 bg-[#1877F2] hover:bg-[#166FE5] text-white"
             >
               <Facebook className="w-5 h-5" />
-              페이스북
+              <span className="text-xs">페이스북</span>
+            </Button>
+            <Button
+              onClick={handleTwitterShare}
+              className="flex flex-col items-center gap-1 h-auto py-3 bg-black hover:bg-gray-800 text-white"
+            >
+              <Twitter className="w-5 h-5" />
+              <span className="text-xs">X</span>
+            </Button>
+            <Button
+              onClick={handleThreadsShare}
+              className="flex flex-col items-center gap-1 h-auto py-3 bg-black hover:bg-gray-800 text-white"
+            >
+              <ThreadsIcon className="w-5 h-5" />
+              <span className="text-xs">쓰레드</span>
             </Button>
           </div>
         </motion.div>
