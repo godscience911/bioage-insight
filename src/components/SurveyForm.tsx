@@ -86,6 +86,30 @@ export const SurveyForm = ({ onComplete, onBack }: SurveyFormProps) => {
     stressLevel: 5,
   });
   const [age, setAge] = useState<string>('');
+  const [ageError, setAgeError] = useState<string>('');
+
+  // Validate age input - only digits, 1-120 range
+  const validateAge = (input: string): { isValid: boolean; error: string } => {
+    const trimmed = input.trim();
+    if (!trimmed) return { isValid: false, error: '' };
+    if (!/^\d+$/.test(trimmed)) return { isValid: false, error: '숫자만 입력해주세요' };
+    const num = parseInt(trimmed, 10);
+    if (num < 1 || num > 120) return { isValid: false, error: '1~120 사이의 나이를 입력해주세요' };
+    return { isValid: true, error: '' };
+  };
+
+  const handleAgeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    // Only allow digits, max 3 characters
+    const value = e.target.value.replace(/\D/g, '').slice(0, 3);
+    setAge(value);
+    
+    if (value) {
+      const { error } = validateAge(value);
+      setAgeError(error);
+    } else {
+      setAgeError('');
+    }
+  };
 
   const currentQuestion = questions[currentStep];
   const isLastStep = currentStep === questions.length - 1;
@@ -101,12 +125,14 @@ export const SurveyForm = ({ onComplete, onBack }: SurveyFormProps) => {
 
   const handleNext = () => {
     if (isLastStep) {
-      if (!age || parseInt(age) < 1 || parseInt(age) > 120) {
+      const { isValid, error } = validateAge(age);
+      if (!isValid) {
+        setAgeError(error || '나이를 입력해주세요');
         return;
       }
       onComplete({
         ...answers,
-        actualAge: parseInt(age),
+        actualAge: parseInt(age.trim(), 10),
       } as SurveyData);
     } else {
       setCurrentStep((prev) => prev + 1);
@@ -202,14 +228,20 @@ export const SurveyForm = ({ onComplete, onBack }: SurveyFormProps) => {
                   실제 나이를 입력해주세요
                 </label>
                 <input
-                  type="number"
+                  type="text"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
                   value={age}
-                  onChange={(e) => setAge(e.target.value)}
+                  onChange={handleAgeChange}
                   placeholder="예: 35"
-                  min="1"
-                  max="120"
-                  className="w-full p-4 rounded-xl border-2 border-border bg-card focus:border-primary focus:outline-none transition-colors text-lg font-semibold"
+                  maxLength={3}
+                  className={`w-full p-4 rounded-xl border-2 bg-card focus:outline-none transition-colors text-lg font-semibold ${
+                    ageError ? 'border-destructive focus:border-destructive' : 'border-border focus:border-primary'
+                  }`}
                 />
+                {ageError && (
+                  <p className="text-sm text-destructive mt-2">{ageError}</p>
+                )}
               </motion.div>
             )}
           </motion.div>
@@ -226,7 +258,7 @@ export const SurveyForm = ({ onComplete, onBack }: SurveyFormProps) => {
           </Button>
           <Button
             onClick={handleNext}
-            disabled={!canProceed || (isLastStep && (!age || parseInt(age) < 1))}
+            disabled={!canProceed || (isLastStep && !validateAge(age).isValid)}
             className="flex-1 py-6 rounded-xl bg-gradient-hero text-primary-foreground hover:opacity-90"
           >
             {isLastStep ? '분석 시작' : '다음'}

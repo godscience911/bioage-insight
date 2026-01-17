@@ -44,12 +44,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         .single();
 
       if (error) {
-        console.error('Error fetching profile:', error);
+        if (import.meta.env.DEV) {
+          console.error('Error fetching profile:', error);
+        }
         return null;
       }
       return data as UserProfile;
     } catch (error) {
-      console.error('Error in fetchProfile:', error);
+      if (import.meta.env.DEV) {
+        console.error('Error in fetchProfile:', error);
+      }
       return null;
     }
   };

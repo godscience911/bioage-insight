@@ -76,10 +76,12 @@ export default function Auth() {
         throw error;
       }
     } catch (error: any) {
-      console.error(`${provider} login error:`, error);
+      if (import.meta.env.DEV) {
+        console.error(`${provider} login error:`, error);
+      }
       toast({
         title: '로그인 실패',
-        description: error.message || '로그인 중 오류가 발생했습니다. 다시 시도해주세요.',
+        description: '로그인 중 오류가 발생했습니다. 다시 시도해주세요.',
         variant: 'destructive',
       });
       setLoading(null);
