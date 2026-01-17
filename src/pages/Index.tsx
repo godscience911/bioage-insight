@@ -5,6 +5,7 @@ import { SurveyForm } from '@/components/SurveyForm';
 import { FaceScan } from '@/components/FaceScan';
 import { ResultDashboard } from '@/components/ResultDashboard';
 import { ThemeToggle } from '@/components/ThemeToggle';
+import { UserMenu } from '@/components/UserMenu';
 import type { SurveyData, SurveyResult } from '@/types/survey';
 
 type AppStep = 'hero' | 'survey' | 'faceScan' | 'result';
@@ -91,14 +92,15 @@ const Index = () => {
 
   return (
     <div className="min-h-screen bg-background relative">
-      {/* Theme Toggle - Fixed Position */}
+      {/* Header with Theme Toggle and User Menu */}
       <motion.div 
-        className="fixed top-4 right-4 z-50"
+        className="fixed top-4 right-4 z-50 flex items-center gap-2"
         initial={{ opacity: 0, y: -20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.5 }}
       >
         <ThemeToggle />
+        <UserMenu />
       </motion.div>
 
       <AnimatePresence mode="wait">
