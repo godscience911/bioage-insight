@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { useNavigate, useLocation, Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
@@ -216,21 +216,32 @@ export default function Auth() {
             className="text-center text-sm text-muted-foreground mt-8"
           >
             계속 진행하면{' '}
-            <a href="#" className="text-primary hover:underline">
+            <Link to="/terms" className="text-primary hover:underline">
               서비스 이용약관
-            </a>
+            </Link>
             {' '}및{' '}
-            <a href="#" className="text-primary hover:underline">
+            <Link to="/privacy" className="text-primary hover:underline">
               개인정보 처리방침
-            </a>
+            </Link>
             에 동의하게 됩니다.
           </motion.p>
         </motion.div>
       </div>
 
       {/* Footer */}
-      <div className="p-4 text-center text-sm text-muted-foreground">
-        © 2024 BioAge Insight. All rights reserved.
+      <div className="p-4 text-center space-y-2">
+        <div className="flex items-center justify-center gap-4 text-sm">
+          <Link to="/terms" className="text-muted-foreground hover:text-primary transition-colors">
+            이용약관
+          </Link>
+          <span className="text-border">|</span>
+          <Link to="/privacy" className="text-muted-foreground hover:text-primary transition-colors">
+            개인정보처리방침
+          </Link>
+        </div>
+        <p className="text-sm text-muted-foreground">
+          © 2024 BioAge Insight. All rights reserved.
+        </p>
       </div>
     </div>
   );
