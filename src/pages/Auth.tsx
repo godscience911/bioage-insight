@@ -4,8 +4,11 @@ import { motion } from 'framer-motion';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, ArrowLeft, Sparkles } from 'lucide-react';
+import { Loader2, ArrowLeft, Sparkles, Mail, Lock, User, UserCircle } from 'lucide-react';
+import { z } from 'zod';
 
 // Social provider icons
 const GoogleIcon = () => (
@@ -44,12 +47,26 @@ const KakaoIcon = () => (
   </svg>
 );
 
+// Validation schemas
+const emailSchema = z.string().email('올바른 이메일 주소를 입력해주세요');
+const passwordSchema = z.string().min(6, '비밀번호는 최소 6자 이상이어야 합니다');
+const displayNameSchema = z.string().min(2, '이름은 최소 2자 이상이어야 합니다').max(50, '이름은 50자를 초과할 수 없습니다');
+
+type AuthMode = 'social' | 'login' | 'signup';
+
 export default function Auth() {
   const navigate = useNavigate();
   const location = useLocation();
   const { user, loading: authLoading } = useAuth();
   const { toast } = useToast();
   const [loading, setLoading] = useState<string | null>(null);
+  const [mode, setMode] = useState<AuthMode>('social');
+  
+  // Form states
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [displayName, setDisplayName] = useState('');
+  const [errors, setErrors] = useState<{ email?: string; password?: string; displayName?: string }>({});
 
   const from = location.state?.from?.pathname || '/';
 
@@ -58,6 +75,30 @@ export default function Auth() {
       navigate(from, { replace: true });
     }
   }, [user, authLoading, navigate, from]);
+
+  const validateForm = (isSignup: boolean): boolean => {
+    const newErrors: { email?: string; password?: string; displayName?: string } = {};
+    
+    const emailResult = emailSchema.safeParse(email);
+    if (!emailResult.success) {
+      newErrors.email = emailResult.error.errors[0].message;
+    }
+    
+    const passwordResult = passwordSchema.safeParse(password);
+    if (!passwordResult.success) {
+      newErrors.password = passwordResult.error.errors[0].message;
+    }
+    
+    if (isSignup) {
+      const displayNameResult = displayNameSchema.safeParse(displayName);
+      if (!displayNameResult.success) {
+        newErrors.displayName = displayNameResult.error.errors[0].message;
+      }
+    }
+    
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
+  };
 
   const handleSocialLogin = async (provider: 'google' | 'apple' | 'kakao') => {
     setLoading(provider);
@@ -88,6 +129,114 @@ export default function Auth() {
     }
   };
 
+  const handleGuestLogin = async () => {
+    setLoading('guest');
+    
+    try {
+      const { error } = await supabase.auth.signInAnonymously();
+      
+      if (error) {
+        throw error;
+      }
+      
+      toast({
+        title: '게스트로 로그인되었습니다',
+        description: '일부 기능이 제한될 수 있습니다.',
+      });
+    } catch (error: any) {
+      if (import.meta.env.DEV) {
+        console.error('Guest login error:', error);
+      }
+      toast({
+        title: '로그인 실패',
+        description: '게스트 로그인 중 오류가 발생했습니다. 다시 시도해주세요.',
+        variant: 'destructive',
+      });
+      setLoading(null);
+    }
+  };
+
+  const handleEmailLogin = async () => {
+    if (!validateForm(false)) return;
+    
+    setLoading('email-login');
+    
+    try {
+      const { error } = await supabase.auth.signInWithPassword({
+        email: email.trim(),
+        password,
+      });
+      
+      if (error) {
+        throw error;
+      }
+      
+      toast({
+        title: '로그인 성공',
+        description: '환영합니다!',
+      });
+    } catch (error: any) {
+      if (import.meta.env.DEV) {
+        console.error('Email login error:', error);
+      }
+      toast({
+        title: '로그인 실패',
+        description: error.message === 'Invalid login credentials' 
+          ? '이메일 또는 비밀번호가 올바르지 않습니다.' 
+          : '로그인 중 오류가 발생했습니다. 다시 시도해주세요.',
+        variant: 'destructive',
+      });
+      setLoading(null);
+    }
+  };
+
+  const handleEmailSignup = async () => {
+    if (!validateForm(true)) return;
+    
+    setLoading('email-signup');
+    
+    try {
+      const { error } = await supabase.auth.signUp({
+        email: email.trim(),
+        password,
+        options: {
+          emailRedirectTo: window.location.origin,
+          data: {
+            display_name: displayName.trim(),
+          },
+        },
+      });
+      
+      if (error) {
+        throw error;
+      }
+      
+      toast({
+        title: '회원가입 완료',
+        description: '환영합니다! 로그인되었습니다.',
+      });
+    } catch (error: any) {
+      if (import.meta.env.DEV) {
+        console.error('Email signup error:', error);
+      }
+      toast({
+        title: '회원가입 실패',
+        description: error.message === 'User already registered'
+          ? '이미 가입된 이메일입니다.'
+          : '회원가입 중 오류가 발생했습니다. 다시 시도해주세요.',
+        variant: 'destructive',
+      });
+      setLoading(null);
+    }
+  };
+
+  const resetForm = () => {
+    setEmail('');
+    setPassword('');
+    setDisplayName('');
+    setErrors({});
+  };
+
   if (authLoading) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
@@ -103,7 +252,14 @@ export default function Auth() {
         <Button
           variant="ghost"
           size="icon"
-          onClick={() => navigate('/')}
+          onClick={() => {
+            if (mode !== 'social') {
+              setMode('social');
+              resetForm();
+            } else {
+              navigate('/');
+            }
+          }}
           className="rounded-full"
         >
           <ArrowLeft className="h-5 w-5" />
@@ -131,82 +287,242 @@ export default function Auth() {
               BioAge Insight
             </h1>
             <p className="text-muted-foreground">
-              소셜 계정으로 간편하게 시작하세요
+              {mode === 'social' && '소셜 계정으로 간편하게 시작하세요'}
+              {mode === 'login' && '이메일로 로그인하세요'}
+              {mode === 'signup' && '새 계정을 만드세요'}
             </p>
           </div>
 
-          {/* Social Login Buttons */}
-          <div className="space-y-4">
-            {/* Google */}
-            <motion.div
-              initial={{ opacity: 0, x: -20 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ delay: 0.3 }}
-            >
-              <Button
-                variant="outline"
-                className="w-full h-14 text-base font-medium relative bg-white hover:bg-gray-50 border-gray-200 text-gray-700"
-                onClick={() => handleSocialLogin('google')}
-                disabled={loading !== null}
-              >
-                {loading === 'google' ? (
-                  <Loader2 className="h-5 w-5 animate-spin" />
-                ) : (
-                  <>
-                    <GoogleIcon />
-                    <span className="ml-3">Google로 계속하기</span>
-                  </>
-                )}
-              </Button>
-            </motion.div>
+          {mode === 'social' && (
+            <>
+              {/* Social Login Buttons */}
+              <div className="space-y-4">
+                {/* Google */}
+                <motion.div
+                  initial={{ opacity: 0, x: -20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ delay: 0.3 }}
+                >
+                  <Button
+                    variant="outline"
+                    className="w-full h-14 text-base font-medium relative bg-white hover:bg-gray-50 border-gray-200 text-gray-700"
+                    onClick={() => handleSocialLogin('google')}
+                    disabled={loading !== null}
+                  >
+                    {loading === 'google' ? (
+                      <Loader2 className="h-5 w-5 animate-spin" />
+                    ) : (
+                      <>
+                        <GoogleIcon />
+                        <span className="ml-3">Google로 계속하기</span>
+                      </>
+                    )}
+                  </Button>
+                </motion.div>
 
-            {/* Apple */}
-            <motion.div
-              initial={{ opacity: 0, x: -20 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ delay: 0.4 }}
-            >
-              <Button
-                variant="outline"
-                className="w-full h-14 text-base font-medium relative bg-black hover:bg-gray-900 border-black text-white"
-                onClick={() => handleSocialLogin('apple')}
-                disabled={loading !== null}
-              >
-                {loading === 'apple' ? (
-                  <Loader2 className="h-5 w-5 animate-spin" />
-                ) : (
-                  <>
-                    <AppleIcon />
-                    <span className="ml-3">Apple로 계속하기</span>
-                  </>
-                )}
-              </Button>
-            </motion.div>
+                {/* Apple */}
+                <motion.div
+                  initial={{ opacity: 0, x: -20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ delay: 0.4 }}
+                >
+                  <Button
+                    variant="outline"
+                    className="w-full h-14 text-base font-medium relative bg-black hover:bg-gray-900 border-black text-white"
+                    onClick={() => handleSocialLogin('apple')}
+                    disabled={loading !== null}
+                  >
+                    {loading === 'apple' ? (
+                      <Loader2 className="h-5 w-5 animate-spin" />
+                    ) : (
+                      <>
+                        <AppleIcon />
+                        <span className="ml-3">Apple로 계속하기</span>
+                      </>
+                    )}
+                  </Button>
+                </motion.div>
 
-            {/* Kakao */}
+                {/* Kakao */}
+                <motion.div
+                  initial={{ opacity: 0, x: -20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ delay: 0.5 }}
+                >
+                  <Button
+                    variant="outline"
+                    className="w-full h-14 text-base font-medium relative border-0"
+                    style={{ backgroundColor: '#FEE500', color: '#000000' }}
+                    onClick={() => handleSocialLogin('kakao')}
+                    disabled={loading !== null}
+                  >
+                    {loading === 'kakao' ? (
+                      <Loader2 className="h-5 w-5 animate-spin" />
+                    ) : (
+                      <>
+                        <KakaoIcon />
+                        <span className="ml-3">카카오로 계속하기</span>
+                      </>
+                    )}
+                  </Button>
+                </motion.div>
+
+                {/* Divider */}
+                <div className="relative my-6">
+                  <div className="absolute inset-0 flex items-center">
+                    <div className="w-full border-t border-border"></div>
+                  </div>
+                  <div className="relative flex justify-center text-sm">
+                    <span className="px-4 bg-background text-muted-foreground">또는</span>
+                  </div>
+                </div>
+
+                {/* Email Login/Signup Buttons */}
+                <motion.div
+                  initial={{ opacity: 0, x: -20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ delay: 0.6 }}
+                  className="space-y-3"
+                >
+                  <Button
+                    variant="outline"
+                    className="w-full h-14 text-base font-medium"
+                    onClick={() => setMode('login')}
+                    disabled={loading !== null}
+                  >
+                    <Mail className="h-5 w-5 mr-3" />
+                    이메일로 로그인
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    className="w-full h-14 text-base font-medium"
+                    onClick={() => setMode('signup')}
+                    disabled={loading !== null}
+                  >
+                    <User className="h-5 w-5 mr-3" />
+                    이메일로 회원가입
+                  </Button>
+                </motion.div>
+
+                {/* Guest Login */}
+                <motion.div
+                  initial={{ opacity: 0, x: -20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ delay: 0.7 }}
+                >
+                  <Button
+                    variant="ghost"
+                    className="w-full h-12 text-base font-medium text-muted-foreground hover:text-foreground"
+                    onClick={handleGuestLogin}
+                    disabled={loading !== null}
+                  >
+                    {loading === 'guest' ? (
+                      <Loader2 className="h-5 w-5 animate-spin" />
+                    ) : (
+                      <>
+                        <UserCircle className="h-5 w-5 mr-3" />
+                        게스트로 계속하기
+                      </>
+                    )}
+                  </Button>
+                </motion.div>
+              </div>
+            </>
+          )}
+
+          {(mode === 'login' || mode === 'signup') && (
             <motion.div
-              initial={{ opacity: 0, x: -20 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ delay: 0.5 }}
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.3 }}
+              className="space-y-6"
             >
+              {mode === 'signup' && (
+                <div className="space-y-2">
+                  <Label htmlFor="displayName" className="text-base">이름</Label>
+                  <div className="relative">
+                    <User className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
+                    <Input
+                      id="displayName"
+                      type="text"
+                      placeholder="홍길동"
+                      value={displayName}
+                      onChange={(e) => setDisplayName(e.target.value)}
+                      className={`pl-10 h-12 text-base ${errors.displayName ? 'border-destructive' : ''}`}
+                      disabled={loading !== null}
+                    />
+                  </div>
+                  {errors.displayName && (
+                    <p className="text-sm text-destructive">{errors.displayName}</p>
+                  )}
+                </div>
+              )}
+
+              <div className="space-y-2">
+                <Label htmlFor="email" className="text-base">이메일</Label>
+                <div className="relative">
+                  <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
+                  <Input
+                    id="email"
+                    type="email"
+                    placeholder="example@email.com"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    className={`pl-10 h-12 text-base ${errors.email ? 'border-destructive' : ''}`}
+                    disabled={loading !== null}
+                  />
+                </div>
+                {errors.email && (
+                  <p className="text-sm text-destructive">{errors.email}</p>
+                )}
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="password" className="text-base">비밀번호</Label>
+                <div className="relative">
+                  <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
+                  <Input
+                    id="password"
+                    type="password"
+                    placeholder="최소 6자 이상"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    className={`pl-10 h-12 text-base ${errors.password ? 'border-destructive' : ''}`}
+                    disabled={loading !== null}
+                  />
+                </div>
+                {errors.password && (
+                  <p className="text-sm text-destructive">{errors.password}</p>
+                )}
+              </div>
+
               <Button
-                variant="outline"
-                className="w-full h-14 text-base font-medium relative border-0"
-                style={{ backgroundColor: '#FEE500', color: '#000000' }}
-                onClick={() => handleSocialLogin('kakao')}
+                className="w-full h-14 text-base font-medium"
+                onClick={mode === 'login' ? handleEmailLogin : handleEmailSignup}
                 disabled={loading !== null}
               >
-                {loading === 'kakao' ? (
+                {(loading === 'email-login' || loading === 'email-signup') ? (
                   <Loader2 className="h-5 w-5 animate-spin" />
                 ) : (
-                  <>
-                    <KakaoIcon />
-                    <span className="ml-3">카카오로 계속하기</span>
-                  </>
+                  mode === 'login' ? '로그인' : '회원가입'
                 )}
               </Button>
+
+              <div className="text-center">
+                <button
+                  type="button"
+                  className="text-sm text-muted-foreground hover:text-primary transition-colors"
+                  onClick={() => {
+                    setMode(mode === 'login' ? 'signup' : 'login');
+                    resetForm();
+                  }}
+                  disabled={loading !== null}
+                >
+                  {mode === 'login' ? '계정이 없으신가요? 회원가입' : '이미 계정이 있으신가요? 로그인'}
+                </button>
+              </div>
             </motion.div>
-          </div>
+          )}
 
           {/* Terms */}
           <motion.p
